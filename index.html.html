@@ -431,7 +431,7 @@ tr:hover td{background:var(--blue-xlt)}
       <div id="mode-import" style="display:none">
         <div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--green)">
           ✓ <strong>One file, one click.</strong> Your Excel must have columns: <strong>Section | Metric | Year | Type | LOB | Jan | Feb … Dec</strong><br/>
-          All years, all LOBs, Actual + Target can be in the same file. Dashboard reads everything automatically.
+          All years, all LOBs, Actual + Target can be in the same file. <strong>Revenue</strong> in P&amp;L is auto-calculated from LOB Gross Commission — no need to include it.
         </div>
         <div id="imp-msg" style="display:none"></div>
         <div class="drop-zone" id="drop-zone"
@@ -517,17 +517,17 @@ function ga(sec,metric,type,yr,lob=''){
   let r;
   if(sec==='perf'){
     r=DATA.perf[metric]?.[type]?.[yr];
-    // Auto-sum from LOB lines if no direct perf data entered
     if(!r||r.every(v=>!v||v===0)){
-      const lobSum=LINES.reduce((acc,ln)=>{
-        const lr=DATA.lob[ln]?.[metric]?.[type]?.[yr];
-        if(lr)lr.forEach((v,i)=>acc[i]+=(Number(v)||0));
-        return acc;
-      },Array(12).fill(0));
+      const lobSum=LINES.reduce((acc,ln)=>{const lr=DATA.lob[ln]?.[metric]?.[type]?.[yr];if(lr)lr.forEach((v,i)=>acc[i]+=(Number(v)||0));return acc;},Array(12).fill(0));
       if(lobSum.some(v=>v!==0))return lobSum;
     }
   }
-  else if(sec==='pl')r=DATA.pl[metric]?.[type]?.[yr];
+  else if(sec==='pl'){
+    if(metric==='revenue'){
+      return LINES.reduce((acc,ln)=>{const lr=DATA.lob[ln]?.gross?.[type]?.[yr];if(lr)lr.forEach((v,i)=>acc[i]+=(Number(v)||0));return acc;},z12());
+    }
+    r=DATA.pl[metric]?.[type]?.[yr];
+  }
   else if(sec==='lob'&&lob)r=DATA.lob[lob]?.[metric]?.[type]?.[yr];
   return r?r.map(Number):z12();
 }
@@ -822,11 +822,16 @@ function setMode(m,el){
 }
 function onSecChange(){
   const sec=document.getElementById('e-section').value;
-  const list=sec==='pl'?PLM:PM;
+  const list=sec==='pl'?PLM.filter(m=>m.key!=='revenue'):PM;
   document.getElementById('e-metric').innerHTML=list.map(m=>`<option value="${m.key}">${m.label}</option>`).join('');
   document.getElementById('e-lob-row').style.display=sec==='lob'?'':'none';
   const budgetOpt=document.getElementById('e-type-budget');
   if(budgetOpt)budgetOpt.textContent=sec==='pl'?'Budget':'Target';
+  let note=document.getElementById('rev-note');
+  if(sec==='pl'){
+    if(!note){note=document.createElement('div');note.id='rev-note';note.style.cssText='font-size:11px;color:var(--text2);background:var(--blue-lt);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;margin-bottom:10px';note.innerHTML='\u2139\uFE0F <strong>Revenue</strong> is auto-calculated as sum of LOB Gross Commission (General + Medical + Motor). Enter commissions in the Line of Business tab.';document.getElementById('mode-manual').insertBefore(note,document.getElementById('mode-manual').querySelector('.fgrid'));}
+    note.style.display='';
+  }else{if(note)note.style.display='none';}
   loadMVals();
 }
 function updateHint(){
@@ -920,7 +925,7 @@ function parseFlatRows(rows){
     }
     // metric
     const rawMetric=String(row[ci.metric]).trim().toLowerCase();
-    const list=sec==='pl'?PLM:PM;
+    const list=sec==='pl'?PLM.filter(m=>m.key!=='revenue'):PM;
     const match=list.find(m=>m.label.toLowerCase()===rawMetric||m.key.toLowerCase()===rawMetric);
     if(!match){skipped++;return;}
     // year
